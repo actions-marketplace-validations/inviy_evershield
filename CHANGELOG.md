@@ -16,6 +16,10 @@ change rule defaults and output shapes; each such change is listed.
   report; findings at the gate are a verdict, not a tool error. Verified
   with the official MCP Inspector. The Claude Code plugin registers it, and
   `docs/rules.md` now ships in the package for `explain_rule`.
+- Documentation site built from the repository's Markdown (`pnpm site`,
+  `scripts/site.ts`) and published to GitHub Pages: overview, every rule on
+  a page of its own, configuration, the false-positive corpus, the REA
+  experiment, design and changelog.
 
 ### Changed
 
