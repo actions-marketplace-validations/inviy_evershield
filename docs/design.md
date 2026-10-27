@@ -26,8 +26,8 @@ fail this in three recurring ways:
    `display:none`, opacity or a locked overlay, but the real values sit in the
    DOM and in storage.
 
-Secret scanners (gitleaks, trufflehog) look at repositories, not at what is
-served. Artifact scanners cover the first failure. Almost nothing covers the
+Secret scanners (gitleaks, trufflehog) cover the first failure well, and
+both can scan a build directory as well as a repository. Almost nothing covers the
 second and third, which is where paying customers, authorization and
 business logic are actually lost. evershield covers all three, before deploy.
 
