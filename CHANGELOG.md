@@ -7,6 +7,21 @@ change rule defaults and output shapes; each such change is listed.
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-10-27
+
+### Changed
+
+- The GitHub Action's `description` is shortened to 104 characters so the
+  Action can be listed on GitHub Marketplace (limit 125). Behavior is
+  unchanged.
+
+### Fixed
+
+- `docs/rules.md`: a note about private key blocks sat between the rows of the
+  secret-rule table, so the Supabase `service_role`, Stripe test key, Google
+  API key, JWT and name-based rows rendered as plain text. The note now
+  follows the table.
+
 ## [0.4.1] - 2026-10-20
 
 ### Fixed
@@ -176,7 +191,8 @@ First release: layer 1, the built-artifact scan.
   scanning, then fails on blocking findings.
 - Matched values are redacted in every output format.
 
-[Unreleased]: https://github.com/inviy/evershield/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/inviy/evershield/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/inviy/evershield/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/inviy/evershield/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/inviy/evershield/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/inviy/evershield/compare/v0.3.0...v0.3.2
