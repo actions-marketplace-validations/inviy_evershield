@@ -4,95 +4,59 @@
 
 # evershield
 
-**Shield everything, everywhere.** Find what your web app exposes to the
-browser before attackers do.
+**Your paywall is probably just CSS.** evershield checks what each plan's
+users actually receive, in the API response and in the page, and fails the
+build when a free user is holding your Pro data.
 
-> Status: pre-release. All three layers work: built-artifact scan,
-> privilege-differential response audit, and rendered-surface audit. Follow
-> the [roadmap](docs/design.md#roadmap) or open an issue to help shape it.
+```bash
+npx evershield demo      # 30 seconds, no config: a built-in app whose paywall only blurs
+```
+
+```
+━━ Layer 3 · what the free user's page holds but cannot see
+✖ [high/high] /: "Burstiness score 0.82 (human-like)" is visible to pro and present but hidden for free (text hidden by blur)
+━━ Layer 2 · what the free user's API response carries
+✖ [high/high] GET /api/report returns "burstiness" to free, which the config says must not receive it
+━━ Layer 1 · what the shipped bundle gives away
+✖ [critical/high] Stripe secret key shipped in assets/main.js
+
+The paywall was CSS; the data was already in the free user's hands.
+```
+
+`npx evershield demo --fixed` runs the same app after the fixes and reports
+nothing. Layer 3 needs Playwright (`npm install playwright && npx playwright
+install chromium`); without it the demo shows layers 1 and 2.
+
+> Status: pre-release. All three layers work. Follow the
+> [roadmap](docs/design.md#roadmap) or open an issue to help shape it.
 
 ## Why
 
-Everything a browser receives is public: bundles, source maps, API responses,
-the rendered DOM. Reverse-engineering tools now read all of it automatically,
-and they look like ordinary visitors, so you cannot block them. The only
-defence that works is to control what you ship.
+A common way to build a paid tier: the API returns the full object, and the
+client decides what to show. Free users get the numbers blurred, a lock icon
+over a card, a `display: none` on the Pro section. It looks locked. It is
+not: the values are in the response and in the DOM, one DevTools tab away,
+and agent tools that reverse engineer web apps now read them automatically.
 
-Teams leak in three recurring ways, and evershield checks all three before
-deploy:
+This is how evershield started. A side project of mine showed a "Pro only"
+metric blurred in the UI while the real number was in every free user's
+JSON. No secret scanner would ever flag that: nothing secret-shaped leaked,
+just data the wrong tier could read.
 
-| Layer | What leaks | Example |
-|---|---|---|
-| **Artifact** | keys, internal URLs, prompts, source maps in the build | an LLM system prompt shipped as a string constant |
-| **Response** | higher-tier data in lower-tier API responses | "Pro only" metrics present in every free user's JSON |
-| **Surface** | data hidden by CSS instead of withheld by the server | a blurred paywall with the real numbers in the DOM |
+evershield checks three places, before deploy:
 
-Secret scanners look at your repository. evershield looks at what your users
-actually get.
+| Layer | Command | What it catches | Example |
+|---|---|---|---|
+| **Response** | `audit` | higher-tier data in lower-tier API responses | "Pro only" metrics in every free user's JSON |
+| **Surface** | `surface` | data hidden by CSS instead of withheld by the server | a blurred paywall with the real numbers in the DOM |
+| **Artifact** | `scan` | keys, internal URLs, source maps in the build | a billing key in the bundle, a published `.map` |
 
-## Quick start
-
-```bash
-# scan a built artifact directory
-npx evershield scan ./dist            # Vite, CRA, Astro, static sites, …
-npx evershield scan ./.next           # Next.js: only browser-facing files are scanned
-
-# machine-readable output and a stricter gate for CI
-npx evershield scan ./dist --format json --fail-on medium --min-confidence low
-
-# SARIF for code scanning, written to a file
-npx evershield scan ./dist --format sarif --output evershield.sarif
-
-# mobile and desktop app packages: everything inside ships to the device
-npx evershield scan app-release.apk   # Android (.apk, .aab), incl. Hermes bytecode and DEX strings
-npx evershield scan MyApp.ipa         # iOS: main.jsbundle and the app executable's strings
-npx evershield scan app.asar          # Electron
-npx evershield scan ./dist            # an Expo / React Native export (*.hbc, *.bundle)
-```
-
-Exit code `0` means nothing blocking, `1` means findings at or above the
-gate (default: severity ≥ high **and** confidence ≥ medium), `2` means a
-usage or runtime error. Matched values are never printed in full.
-
-What layer 1 catches today, with the reasoning behind each severity and
-confidence, is in [docs/rules.md](docs/rules.md):
-
-- `artifact/secret-like-string`: provider keys, private key blocks, Supabase
-  `service_role` JWTs, and name-based high-entropy values
-- `artifact/source-map-published`: shipped `.map` files and inline maps
-- `artifact/sensitive-env-name`: `SERVICE_ROLE`, `*_SECRET`, `DATABASE_URL`, …
-- `artifact/internal-endpoint`: private IPs, `.internal` hosts, dev fallbacks
-
-## Leave reverse engineers empty-handed
-
-Tools like [REA](https://github.com/morluto/rea) cannot be blocked: they run
-in the attacker's own browser, on their own copy of your app. What you
-control is what they get. `recon` shows it from their side and fails the
-build while anything is worth taking:
-
-```bash
-npx evershield recon ./dist               # or an .apk, .ipa, .asar
-npx evershield recon ./dist --rea         # also run REA itself and check each finding against its output
-```
-
-```
-Worth taking: 2 blocking, 3 total
-✖ [critical/high] Stripe secret key shipped in assets/index.js  · REA: recovered
-✖ [high/high] Source map shipped: assets/index.js.map  · REA: not checked
-• [medium/medium] Private IP address in assets/index.js: 10.0.3.7  · REA: recovered
-
-Map (informational: any tool reconstructs this from shipped code; keep server-side checks on it)
-  hosts: api.example.com (12)
-  API paths: /api/report, /api/user
-  source maps: 1 file(s), 2 original source(s), 2 with full content
-
-Verdict: 2 item(s) worth taking. Anyone running a reverse-engineering tool on this target gets them.
-```
-
-The map is what no build can hide (routes, hosts, field names); recon lists
-it so you know which endpoints need server-side authorization. With `--rea`,
-values are compared in memory and never printed. Pair it with `audit` and
-`surface` for what each plan receives at runtime.
+Layers 2 and 3 call your own app as each identity you configure (anonymous,
+free, pro, ...) and compare what each one gets. Layer 1 overlaps with secret
+scanners such as gitleaks, which can also scan a build directory; run both.
+What evershield adds there is build-aware filtering (only browser-facing
+Next.js files, app packages such as `.apk` and `.ipa`) and the same report,
+gate and SARIF output as the other two layers.
 
 ## Audit what each plan actually receives
 
@@ -161,6 +125,70 @@ The key rule compares tiers: text the Pro page shows that the Free page
 also contains, hidden, is a cosmetic paywall. Tabs and menus hidden for
 everyone never trigger it. See [the surface rules](docs/rules.md#layer-3-surface)
 and [configuration](docs/configuration.md#surface-layer-3).
+
+## Scan the build (layer 1)
+
+```bash
+# scan a built artifact directory
+npx evershield scan ./dist            # Vite, CRA, Astro, static sites, …
+npx evershield scan ./.next           # Next.js: only browser-facing files are scanned
+
+# machine-readable output and a stricter gate for CI
+npx evershield scan ./dist --format json --fail-on medium --min-confidence low
+
+# SARIF for code scanning, written to a file
+npx evershield scan ./dist --format sarif --output evershield.sarif
+
+# mobile and desktop app packages: everything inside ships to the device
+npx evershield scan app-release.apk   # Android (.apk, .aab), incl. Hermes bytecode and DEX strings
+npx evershield scan MyApp.ipa         # iOS: main.jsbundle and the app executable's strings
+npx evershield scan app.asar          # Electron
+npx evershield scan ./dist            # an Expo / React Native export (*.hbc, *.bundle)
+```
+
+Exit code `0` means nothing blocking, `1` means findings at or above the
+gate (default: severity ≥ high **and** confidence ≥ medium), `2` means a
+usage or runtime error. Matched values are never printed in full.
+
+What layer 1 catches today, with the reasoning behind each severity and
+confidence, is in [docs/rules.md](docs/rules.md):
+
+- `artifact/secret-like-string`: provider keys, private key blocks, Supabase
+  `service_role` JWTs, and name-based high-entropy values
+- `artifact/source-map-published`: shipped `.map` files and inline maps
+- `artifact/sensitive-env-name`: `SERVICE_ROLE`, `*_SECRET`, `DATABASE_URL`, …
+- `artifact/internal-endpoint`: private IPs, `.internal` hosts, dev fallbacks
+
+## Leave reverse engineers empty-handed
+
+Tools like [REA](https://github.com/morluto/rea) cannot be blocked: they run
+in the attacker's own browser, on their own copy of your app. What you
+control is what they get. `recon` shows it from their side and fails the
+build while anything is worth taking:
+
+```bash
+npx evershield recon ./dist               # or an .apk, .ipa, .asar
+npx evershield recon ./dist --rea         # also run REA itself and check each finding against its output
+```
+
+```
+Worth taking: 2 blocking, 3 total
+✖ [critical/high] Stripe secret key shipped in assets/index.js  · REA: recovered
+✖ [high/high] Source map shipped: assets/index.js.map  · REA: not checked
+• [medium/medium] Private IP address in assets/index.js: 10.0.3.7  · REA: recovered
+
+Map (informational: any tool reconstructs this from shipped code; keep server-side checks on it)
+  hosts: api.example.com (12)
+  API paths: /api/report, /api/user
+  source maps: 1 file(s), 2 original source(s), 2 with full content
+
+Verdict: 2 item(s) worth taking. Anyone running a reverse-engineering tool on this target gets them.
+```
+
+The map is what no build can hide (routes, hosts, field names); recon lists
+it so you know which endpoints need server-side authorization. With `--rea`,
+values are compared in memory and never printed. Pair it with `audit` and
+`surface` for what each plan receives at runtime.
 
 ## In CI
 

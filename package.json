@@ -1,7 +1,7 @@
 {
   "name": "evershield",
-  "version": "0.4.2",
-  "description": "Shield everything, everywhere: find what your web app exposes to the browser, in bundles, API responses and the rendered page",
+  "version": "0.5.0",
+  "description": "Your paywall is probably just CSS: find Pro data that free users receive in API responses and the rendered page, plus secrets in the bundle",
   "license": "MIT",
   "author": "Lee Dongwook (@inviy)",
   "repository": {
@@ -21,6 +21,8 @@
     "secrets",
     "authorization",
     "paywall",
+    "pricing-tiers",
+    "access-control",
     "static-analysis",
     "sarif",
     "ci",
