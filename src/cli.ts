@@ -3,6 +3,7 @@ import path from "node:path";
 import { parseArgs } from "node:util";
 
 import { runAudit } from "./audit/run.ts";
+import { renderDemoJson, renderDemoText, runDemo } from "./demo.ts";
 import { applyIgnores, type Config, ConfigError, loadConfig } from "./config.ts";
 import { runInit } from "./init.ts";
 import { runRecon } from "./recon.ts";
@@ -25,6 +26,10 @@ const HELP = `evershield ${VERSION}
 Shield everything, everywhere.
 
 Usage:
+  evershield demo [--fixed] [--no-browser] [--format <text|json>]
+                                    See it work in 30 seconds: runs all three layers on a
+                                    built-in app whose paywall is only CSS. No config needed.
+                                    --fixed shows the same app after the fixes
   evershield init [--force]         Detect your framework and write evershield.config.json
                                     and a GitHub workflow that scans every pull request
   evershield scan <dir|app> [options]
@@ -188,6 +193,7 @@ export async function run(argv: readonly string[]): Promise<CliResult> {
     }
   }
   if (command === "recon") return reconCommand(rest);
+  if (command === "demo") return demoCommand(rest);
   if (command !== "scan" && command !== "audit" && command !== "surface") {
     return usageError(`unknown command "${command}"`);
   }
@@ -252,6 +258,28 @@ export async function run(argv: readonly string[]): Promise<CliResult> {
     return await finish({ ...audited, findings: kept, ignored: ignored.length }, gate, options);
   } catch (error) {
     return failure("audit", error);
+  }
+}
+
+async function demoCommand(rest: readonly string[]): Promise<CliResult> {
+  let parsed: ReturnType<typeof parseArgs>;
+  try {
+    parsed = parseArgs({
+      args: [...rest],
+      allowPositionals: false,
+      options: { fixed: { type: "boolean" }, "no-browser": { type: "boolean" }, format: { type: "string", default: "text" } },
+    });
+  } catch (error) {
+    return usageError(error instanceof Error ? error.message : String(error));
+  }
+  const format = String(parsed.values.format);
+  if (format !== "text" && format !== "json") return usageError(`demo: --format must be text or json`);
+  try {
+    const result = await runDemo(parsed.values.fixed === true ? "fixed" : "leaky", { noBrowser: parsed.values["no-browser"] === true });
+    // A demo is not a gate: it exits 0 whether or not the leaky app leaks.
+    return { code: 0, stdout: format === "json" ? renderDemoJson(result, DEFAULT_GATE) : renderDemoText(result, DEFAULT_GATE), stderr: "" };
+  } catch (error) {
+    return failure("demo", error);
   }
 }
 
