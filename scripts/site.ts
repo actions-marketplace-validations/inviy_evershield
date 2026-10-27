@@ -155,7 +155,7 @@ async function main(): Promise<void> {
     await writeFile(path.join(out, page.dir, "index.html"), render(page));
   }
   await mkdir(path.join(out, "assets"), { recursive: true });
-  for (const asset of ["banner.svg", "social-preview.png"]) {
+  for (const asset of ["banner.svg", "banner.png", "social-preview.png"]) {
     await copyFile(path.join(root, "docs/assets", asset), path.join(out, "assets", asset));
   }
   await writeFile(path.join(out, "style.css"), CSS);
