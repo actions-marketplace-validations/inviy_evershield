@@ -7,6 +7,25 @@ change rule defaults and output shapes; each such change is listed.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-27
+
+### Added
+
+- `evershield demo`: runs all three layers on a built-in free/Pro app whose
+  paywall is only CSS, with no config, accounts or build step. `--fixed`
+  runs the same app after the fixes and reports nothing. Layer 3 runs when
+  Playwright is installed and is skipped with an install hint otherwise.
+  The demo exits 0; it is a demonstration, not a gate.
+
+### Changed
+
+- The README leads with the tier-differential checks (layers 2 and 3) and
+  the demo; the build scan moves below them.
+- The README and design document no longer claim that secret scanners only
+  look at repositories: gitleaks and trufflehog can scan a build directory
+  too. They now describe what evershield adds on that layer instead.
+- npm package description and keywords updated to match.
+
 ## [0.4.2] - 2026-10-27
 
 ### Changed
@@ -191,7 +210,8 @@ First release: layer 1, the built-artifact scan.
   scanning, then fails on blocking findings.
 - Matched values are redacted in every output format.
 
-[Unreleased]: https://github.com/inviy/evershield/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/inviy/evershield/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/inviy/evershield/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/inviy/evershield/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/inviy/evershield/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/inviy/evershield/compare/v0.3.2...v0.4.0
