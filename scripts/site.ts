@@ -155,7 +155,9 @@ async function main(): Promise<void> {
     await writeFile(path.join(out, page.dir, "index.html"), render(page));
   }
   await mkdir(path.join(out, "assets"), { recursive: true });
-  await copyFile(path.join(root, "docs/assets/banner.svg"), path.join(out, "assets/banner.svg"));
+  for (const asset of ["banner.svg", "social-preview.png"]) {
+    await copyFile(path.join(root, "docs/assets", asset), path.join(out, "assets", asset));
+  }
   await writeFile(path.join(out, "style.css"), CSS);
   await writeFile(path.join(out, ".nojekyll"), "");
   console.log(`site: ${pages.length} pages in ${path.relative(root, out)}/`);

@@ -1,12 +1,12 @@
 <p align="center">
-  <img src="docs/assets/banner.svg" alt="evershield: shield everything, everywhere" width="100%" />
+  <img src="docs/assets/social-preview.png" alt="Your paywall is probably just CSS. evershield checks what each plan's users actually receive." width="100%" />
 </p>
 
 # evershield
 
-**Your paywall is probably just CSS.** evershield checks what each plan's
-users actually receive, in the API response and in the page, and fails the
-build when a free user is holding your Pro data.
+evershield checks what each plan's users actually receive, in the API
+response and in the page, and fails the build when a free user is holding
+your Pro data.
 
 ```bash
 npx evershield demo      # 30 seconds, no config: a built-in app whose paywall only blurs
