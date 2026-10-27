@@ -15,15 +15,15 @@ Credentials in shipped files.
 | Match | Severity | Confidence | Why |
 |---|---|---|---|
 | AWS access key ID, GitHub token, Stripe live secret key, Slack token, Anthropic key, OpenAI key, private key block | critical | high | Provider formats are structurally unambiguous and grant server-side access |
-
-A private key block needs a base64 body after its `-----BEGIN … PRIVATE
-KEY-----` header. The header alone is how PEM-parsing code checks its
-input (auth0-spa-js bundles such a check) and is not a finding.
 | Supabase JWT with `role: service_role` | critical | high | Bypasses row-level security entirely |
 | Stripe test secret key | medium | high | Not live, still should not ship |
 | Google API key (`AIza…`) | medium | medium | Browser keys are expected; the risk is a missing origin restriction |
 | JWT with no `role` claim | low | medium | Often a fixture, sometimes a live token |
 | Name-based (`apiKey: "…"`) with entropy ≥ 3.5 bits/char and a credential-shaped value | high | low | Depends on the name and the value's shape, not a known format |
+
+A private key block needs a base64 body after its `-----BEGIN … PRIVATE
+KEY-----` header. The header alone is how PEM-parsing code checks its
+input (auth0-spa-js bundles such a check) and is not a finding.
 
 Not reported: Stripe publishable keys, Supabase `anon`/`authenticated` JWTs,
 values under a framework-public prefix (`NEXT_PUBLIC_`, `VITE_`, …),
