@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/banner.svg" alt="evershield: shield everything, everywhere" width="100%" />
+  <img src="docs/assets/banner.png" alt="evershield scans API responses, rendered pages and bundles" width="100%" />
 </p>
 
 # evershield
