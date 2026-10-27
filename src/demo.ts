@@ -21,6 +21,7 @@ import { parseConfig } from "./config.ts";
 import type { Finding } from "./index.ts";
 import { type Gate, isBlocking, renderText, type Report } from "./report/index.ts";
 import { scanArtifact } from "./scan/artifact.ts";
+import { PLAYWRIGHT_MISSING } from "./surface/driver.ts";
 import { runSurface } from "./surface/run.ts";
 
 export type DemoMode = "leaky" | "fixed";
@@ -134,7 +135,7 @@ export interface DemoOptions {
 
 export async function runDemo(mode: DemoMode, options: DemoOptions = {}): Promise<DemoResult> {
   const server = await startDemoServer(mode);
-  const buildDir = await mkdtemp(path.join(tmpdir(), "evershield-demo-"));
+  let buildDir: string | undefined;
   // Config refuses literal credentials, as it should; the demo passes its
   // token the same way a user would, through an environment variable.
   const env = { ...process.env, EVERSHIELD_DEMO_PRO_TOKEN: PRO_TOKEN };
@@ -167,18 +168,22 @@ export async function runDemo(mode: DemoMode, options: DemoOptions = {}): Promis
         surfaceLayer.report = await runSurface(config.surface!, { env });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        surfaceLayer.skipped = /playwright/i.test(message)
-          ? "skipped: needs Playwright. Run `npm install playwright && npx playwright install chromium`, then try again."
-          : `skipped: ${message.split("\n")[0]}`;
+        // Only a missing Playwright gets the install hint; a missing browser or
+        // any other launch failure shows its own first line, which says what to fix.
+        surfaceLayer.skipped =
+          message === PLAYWRIGHT_MISSING
+            ? "skipped: needs Playwright. Run `npm install playwright && npx playwright install chromium`, then try again."
+            : `skipped: ${message.split("\n")[0]}`;
       }
     }
     layers.push(surfaceLayer);
     layers.push({ name: "response", title: "Layer 2 · what the free user's API response carries", report: await runAudit(config.audit!, { env }) });
+    buildDir = await mkdtemp(path.join(tmpdir(), "evershield-demo-"));
     await writeBuild(mode, buildDir);
     layers.push({ name: "artifact", title: "Layer 1 · what the shipped bundle gives away", report: await scanArtifact(buildDir) });
   } finally {
     await server.close();
-    await rm(buildDir, { recursive: true, force: true });
+    if (buildDir !== undefined) await rm(buildDir, { recursive: true, force: true });
   }
 
   return { mode, layers, findings: layers.flatMap((layer) => layer.report?.findings ?? []) };
