@@ -49,14 +49,15 @@ values are never printed in full.
 
 | Input | Required | Meaning |
 |---|---|---|
-| `path` | yes | Built artifact directory to scan (for example `dist` or `.next`) |
+| `command` | no | `scan` (default, layer 1) or `audit` (layer 2, needs an `audit` section in the config) |
+| `path` | for `scan` | Built artifact directory to scan (for example `dist` or `.next`). Ignored for `audit` |
 | `version` | no | evershield npm version to run |
 | `fail-on` | no | Same as `--fail-on` |
 | `min-confidence` | no | Same as `--min-confidence` |
 | `config` | no | Path to `evershield.config.json`. Empty means `./evershield.config.json` if present |
-| `adapter` | no | Same as `--adapter`. Empty means detect |
+| `adapter` | no | Same as `--adapter`, `scan` only. Empty means detect |
 | `sarif-file` | no | Where to write the SARIF report |
-| `upload-sarif` | no | Upload the SARIF report to GitHub code scanning (needs `security-events: write`) |
+| `upload-sarif` | no | Upload the SARIF report to GitHub code scanning (needs `security-events: write`). Category `evershield` for `scan`, `evershield-audit` for `audit` |
 
 | Output | Meaning |
 |---|---|

@@ -7,6 +7,18 @@ change rule defaults and output shapes; each such change is listed.
 
 ## [Unreleased]
 
+### Added
+
+- GitHub Action: `command` input. `command: audit` runs layer 2 and uploads
+  its SARIF under the `evershield-audit` category. The default stays `scan`,
+  so existing workflows are unchanged; `path` is now required only for `scan`.
+
+### Changed
+
+- Docs: README, tutorial, how-to guides and CLI reference reorganized by
+  reader need. The README layer table shows each layer's number and lists
+  the layers in demo order.
+
 ## [0.5.0] - 2026-10-27
 
 ### Added

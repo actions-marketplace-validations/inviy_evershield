@@ -36,6 +36,38 @@ jobs:
           path: ./dist
 ```
 
-The step fails when evershield exits 1 (blocking findings) or 2 (error),
+## Also audit API responses in CI
+
+The Action runs layer 1 (`scan`) by default. Set `command: audit` to run
+layer 2 against a deployed preview or staging API, with the tokens from
+repository secrets:
+
+```yaml
+      - uses: inviy/evershield@v0
+        with:
+          command: audit
+        env:
+          EVERSHIELD_FREE_TOKEN: ${{ secrets.EVERSHIELD_FREE_TOKEN }}
+          EVERSHIELD_PRO_TOKEN: ${{ secrets.EVERSHIELD_PRO_TOKEN }}
+```
+
+The `audit` section of `evershield.config.json` decides which URL is called
+(see [Audit API responses](audit-api-responses.md)). Its results are
+uploaded under their own code-scanning category, `evershield-audit`.
+
+Layer 3 (`surface`) is not available in the Action yet: it needs Playwright
+and a browser on the runner. Run it as a plain step instead:
+
+```yaml
+      - run: npm install --save-dev playwright && npx playwright install --with-deps chromium
+      - run: npx evershield surface
+        env:
+          EVERSHIELD_FREE_STATE: free.json
+          EVERSHIELD_PRO_STATE: pro.json
+```
+
+## Exit codes
+
+The Action step fails when evershield exits 1 (blocking findings) or 2 (error),
 after the SARIF upload. All inputs are listed in the
 [Action reference](../reference/cli.md#github-action).
