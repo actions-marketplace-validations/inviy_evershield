@@ -58,232 +58,31 @@ What evershield adds there is build-aware filtering (only browser-facing
 Next.js files, app packages such as `.apk` and `.ipa`) and the same report,
 gate and SARIF output as the other two layers.
 
-## Audit what each plan actually receives
-
-Layer 2 calls your own API as each identity you configure and compares the
-responses. Credentials are referenced from environment variables, never
-written in the config:
-
-```json
-{
-  "audit": {
-    "baseUrl": "https://api.example.com",
-    "tiers": ["anonymous", "free", "pro"],
-    "identities": {
-      "anonymous": {},
-      "free": { "headers": { "Authorization": "Bearer ${EVERSHIELD_FREE_TOKEN}" } },
-      "pro":  { "headers": { "Authorization": "Bearer ${EVERSHIELD_PRO_TOKEN}" } }
-    },
-    "endpoints": [
-      {
-        "method": "POST",
-        "path": "/api/analyze",
-        "body": { "text": "sample" },
-        "tiered": true,
-        "expect": { "free": { "absent": ["perplexity", "burstiness"] } }
-      }
-    ]
-  }
-}
-```
+## Get started
 
 ```bash
-EVERSHIELD_FREE_TOKEN=… EVERSHIELD_PRO_TOKEN=… npx evershield audit
+npx evershield init              # writes evershield.config.json and a GitHub workflow
+npm run build
+npx evershield scan ./dist       # ./.next for Next.js; exit 0 means nothing blocking
 ```
 
-It reports fields the config says a tier must not receive, fields whose
-names mark them as a higher tier's (`premium_*`, `pro_only`, `internal_*`),
-credential-like fields in any response, and endpoints that answer every
-identity identically. The audit only ever talks to `baseUrl`.
+New to it? [Your first evershield run](docs/tutorial.md) takes about ten
+minutes, from the demo to a passing check on your own build.
 
-## Find paywalls that only hide
+## Guides
 
-Layer 3 opens your pages in a headless browser as each identity and reports
-content that is in the page but hidden: blurred, `display: none`, clipped,
-or tucked into a `data-*` attribute, an inline script or `localStorage`.
+| I want to | Guide |
+|---|---|
+| fail CI when a free user receives Pro fields | [Audit API responses](docs/how-to/audit-api-responses.md) |
+| find Pro content hidden by CSS in the free page | [Find cosmetic paywalls](docs/how-to/find-cosmetic-paywalls.md) |
+| check a build or `.apk`/`.ipa`/`.asar` for keys and source maps | [Scan the build](docs/how-to/scan-the-build.md) |
+| see what a reverse-engineering tool gets from my app | [Check what reverse engineers get](docs/how-to/check-what-reverse-engineers-get.md) |
+| run it on every pull request | [Run in CI](docs/how-to/run-in-ci.md) |
+| let Claude Code, Cursor or Codex run it while coding | [Use from a coding agent](docs/how-to/use-with-coding-agents.md) |
+| silence a known-safe match | [Allowlist a finding](docs/how-to/allowlist-a-finding.md) |
 
-```json
-{
-  "surface": {
-    "baseUrl": "https://staging.example.com",
-    "tiers": ["free", "pro"],
-    "identities": {
-      "free": { "storageState": "${EVERSHIELD_FREE_STATE}" },
-      "pro":  { "storageState": "${EVERSHIELD_PRO_STATE}" }
-    },
-    "pages": [{ "path": "/report/demo" }]
-  }
-}
-```
-
-```bash
-npm install --save-dev playwright && npx playwright install chromium
-EVERSHIELD_FREE_STATE=free.json EVERSHIELD_PRO_STATE=pro.json npx evershield surface
-```
-
-The key rule compares tiers: text the Pro page shows that the Free page
-also contains, hidden, is a cosmetic paywall. Tabs and menus hidden for
-everyone never trigger it. See [the surface rules](docs/rules.md#layer-3-surface)
-and [configuration](docs/configuration.md#surface-layer-3).
-
-## Scan the build (layer 1)
-
-```bash
-# scan a built artifact directory
-npx evershield scan ./dist            # Vite, CRA, Astro, static sites, …
-npx evershield scan ./.next           # Next.js: only browser-facing files are scanned
-
-# machine-readable output and a stricter gate for CI
-npx evershield scan ./dist --format json --fail-on medium --min-confidence low
-
-# SARIF for code scanning, written to a file
-npx evershield scan ./dist --format sarif --output evershield.sarif
-
-# mobile and desktop app packages: everything inside ships to the device
-npx evershield scan app-release.apk   # Android (.apk, .aab), incl. Hermes bytecode and DEX strings
-npx evershield scan MyApp.ipa         # iOS: main.jsbundle and the app executable's strings
-npx evershield scan app.asar          # Electron
-npx evershield scan ./dist            # an Expo / React Native export (*.hbc, *.bundle)
-```
-
-Exit code `0` means nothing blocking, `1` means findings at or above the
-gate (default: severity ≥ high **and** confidence ≥ medium), `2` means a
-usage or runtime error. Matched values are never printed in full.
-
-What layer 1 catches today, with the reasoning behind each severity and
-confidence, is in [docs/rules.md](docs/rules.md):
-
-- `artifact/secret-like-string`: provider keys, private key blocks, Supabase
-  `service_role` JWTs, and name-based high-entropy values
-- `artifact/source-map-published`: shipped `.map` files and inline maps
-- `artifact/sensitive-env-name`: `SERVICE_ROLE`, `*_SECRET`, `DATABASE_URL`, …
-- `artifact/internal-endpoint`: private IPs, `.internal` hosts, dev fallbacks
-
-## Leave reverse engineers empty-handed
-
-Tools like [REA](https://github.com/morluto/rea) cannot be blocked: they run
-in the attacker's own browser, on their own copy of your app. What you
-control is what they get. `recon` shows it from their side and fails the
-build while anything is worth taking:
-
-```bash
-npx evershield recon ./dist               # or an .apk, .ipa, .asar
-npx evershield recon ./dist --rea         # also run REA itself and check each finding against its output
-```
-
-```
-Worth taking: 2 blocking, 3 total
-✖ [critical/high] Stripe secret key shipped in assets/index.js  · REA: recovered
-✖ [high/high] Source map shipped: assets/index.js.map  · REA: not checked
-• [medium/medium] Private IP address in assets/index.js: 10.0.3.7  · REA: recovered
-
-Map (informational: any tool reconstructs this from shipped code; keep server-side checks on it)
-  hosts: api.example.com (12)
-  API paths: /api/report, /api/user
-  source maps: 1 file(s), 2 original source(s), 2 with full content
-
-Verdict: 2 item(s) worth taking. Anyone running a reverse-engineering tool on this target gets them.
-```
-
-The map is what no build can hide (routes, hosts, field names); recon lists
-it so you know which endpoints need server-side authorization. With `--rea`,
-values are compared in memory and never printed. Pair it with `audit` and
-`surface` for what each plan receives at runtime.
-
-## In CI
-
-Fastest path: run this in your project root.
-
-```bash
-npx evershield init
-```
-
-It detects the framework (Next.js, Vite, Astro, SvelteKit, Nuxt, CRA), the
-build directory and package manager, and writes `evershield.config.json`
-and `.github/workflows/evershield.yml`. Existing files are left alone
-unless you pass `--force`.
-
-Or write the workflow yourself. The GitHub Action scans your build and uploads the result to the Security
-tab as code-scanning alerts:
-
-```yaml
-# .github/workflows/evershield.yml
-name: evershield
-on: [pull_request, push]
-permissions:
-  contents: read
-  security-events: write   # for the SARIF upload
-jobs:
-  scan:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: npm ci && npm run build      # produce dist/ or .next/
-      - uses: inviy/evershield@v0
-        with:
-          path: ./dist
-```
-
-Inputs: `path` (required), `fail-on`, `min-confidence`, `config`, `adapter`,
-`sarif-file`, `upload-sarif`, `version`. The step fails when evershield
-exits 1 (blocking findings) or 2 (error), after the SARIF upload.
-
-## In Claude Code
-
-```
-/plugin marketplace add inviy/evershield
-/plugin install evershield@evershield
-```
-
-The plugin adds the MCP server below, an `evershield` skill (Claude checks the server-side
-boundary whenever it touches response fields, plan branches, public env
-vars or `public/`) and an `/evershield` command that builds and scans the
-project.
-
-## In any coding agent (MCP)
-
-`evershield mcp` is a Model Context Protocol server over stdio, so an agent
-can scan the build while it writes the code. Tools: `evershield_scan`,
-`evershield_recon`, `evershield_audit`, `evershield_surface`,
-`evershield_explain_rule`. They return the same JSON a CI run produces;
-`audit` and `surface` still talk only to the origin in your config.
-
-```bash
-# Claude Code (also included in the plugin above)
-claude mcp add evershield -- npx -y evershield@latest mcp
-```
-
-```json
-// Cursor: .cursor/mcp.json · other clients: their MCP config file
-{ "mcpServers": { "evershield": { "command": "npx", "args": ["-y", "evershield@latest", "mcp"] } } }
-```
-
-```toml
-# Codex: ~/.codex/config.toml
-[mcp_servers.evershield]
-command = "npx"
-args = ["-y", "evershield@latest", "mcp"]
-```
-
-## Allowlisting with a reason
-
-Known-safe matches go in `evershield.config.json`, each with a reason:
-
-```json
-{
-  "ignore": [
-    {
-      "ruleId": "artifact/internal-endpoint",
-      "match": "localhost:9999",
-      "reason": "supabase-js bundles this fallback URL; unreachable in production"
-    }
-  ]
-}
-```
-
-evershield refuses a config whose ignores have no `reason`, and reports how
-many findings the config removed. Details in
-[docs/configuration.md](docs/configuration.md).
+Reference: [CLI and Action](docs/reference/cli.md) · [rules](docs/rules.md) ·
+[configuration](docs/configuration.md). All docs: [docs/](docs/README.md).
 
 ## Measured on real code
 
@@ -318,7 +117,7 @@ itself on every build.
 - **Framework agnostic.** Files and HTTP responses, whatever produced them.
 - **CI first.** Stable exit codes, JSON and SARIF output.
 
-Read the full [design document](docs/design.md).
+Background: [design document](docs/design.md).
 
 ## Contributing
 
