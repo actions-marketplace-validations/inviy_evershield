@@ -37,6 +37,16 @@ export function slug(text: string): string {
 
 const SOURCES: Record<string, string> = {
   "README.md": "",
+  "docs/README.md": "docs",
+  "docs/tutorial.md": "tutorial",
+  "docs/how-to/allowlist-a-finding.md": "guides/allowlist-a-finding",
+  "docs/how-to/audit-api-responses.md": "guides/audit-api-responses",
+  "docs/how-to/check-what-reverse-engineers-get.md": "guides/check-what-reverse-engineers-get",
+  "docs/how-to/find-cosmetic-paywalls.md": "guides/find-cosmetic-paywalls",
+  "docs/how-to/run-in-ci.md": "guides/run-in-ci",
+  "docs/how-to/scan-the-build.md": "guides/scan-the-build",
+  "docs/how-to/use-with-coding-agents.md": "guides/use-with-coding-agents",
+  "docs/reference/cli.md": "cli",
   "docs/rules.md": "rules",
   "docs/configuration.md": "configuration",
   "docs/design.md": "design",
@@ -47,6 +57,9 @@ const SOURCES: Record<string, string> = {
 
 const NAV: Array<[string, string]> = [
   ["", "Overview"],
+  ["tutorial", "Tutorial"],
+  ["docs", "All docs"],
+  ["cli", "CLI reference"],
   ["rules", "Rules"],
   ["configuration", "Configuration"],
   ["corpus", "False-positive corpus"],

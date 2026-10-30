@@ -1,5 +1,5 @@
 name: evershield
-description: Find what your web app exposes to the browser before attackers do. Scans built output and uploads SARIF.
+description: Fail the build when a lower plan receives a higher plan's data, or the build ships keys and source maps. Runs scan or audit and uploads SARIF.
 author: Lee Dongwook (@inviy)
 
 branding:
@@ -7,9 +7,14 @@ branding:
   color: blue
 
 inputs:
+  command:
+    description: "What to run: scan (layer 1, the built files) or audit (layer 2, API responses per identity; needs an audit section in the config)"
+    required: false
+    default: scan
   path:
-    description: Built artifact directory to scan (for example dist or .next)
-    required: true
+    description: Built artifact directory to scan (for example dist or .next). Required for scan, ignored for audit
+    required: false
+    default: ""
   version:
     description: evershield npm version to run
     required: false
@@ -57,6 +62,7 @@ runs:
     - id: scan
       shell: bash
       env:
+        INPUT_COMMAND: ${{ inputs.command }}
         INPUT_PATH: ${{ inputs.path }}
         INPUT_VERSION: ${{ inputs.version }}
         INPUT_FAIL_ON: ${{ inputs.fail-on }}
@@ -66,10 +72,25 @@ runs:
         INPUT_SARIF_FILE: ${{ inputs.sarif-file }}
       run: |
         set +e
-        args=(scan "$INPUT_PATH" --format sarif --output "$INPUT_SARIF_FILE"
-              --fail-on "$INPUT_FAIL_ON" --min-confidence "$INPUT_MIN_CONFIDENCE")
+        case "$INPUT_COMMAND" in
+          scan)
+            if [ -z "$INPUT_PATH" ]; then
+              echo "::error::evershield: the scan command needs the path input"
+              echo "exit-code=2" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            args=(scan "$INPUT_PATH") ;;
+          audit)
+            args=(audit) ;;
+          *)
+            echo "::error::evershield: unknown command \"$INPUT_COMMAND\" (use scan or audit)"
+            echo "exit-code=2" >> "$GITHUB_OUTPUT"
+            exit 0 ;;
+        esac
+        args+=(--format sarif --output "$INPUT_SARIF_FILE"
+               --fail-on "$INPUT_FAIL_ON" --min-confidence "$INPUT_MIN_CONFIDENCE")
         [ -n "$INPUT_CONFIG" ] && args+=(--config "$INPUT_CONFIG")
-        [ -n "$INPUT_ADAPTER" ] && args+=(--adapter "$INPUT_ADAPTER")
+        [ "$INPUT_COMMAND" = scan ] && [ -n "$INPUT_ADAPTER" ] && args+=(--adapter "$INPUT_ADAPTER")
         npx --yes "evershield@$INPUT_VERSION" "${args[@]}"
         code=$?
         echo "exit-code=$code" >> "$GITHUB_OUTPUT"
@@ -82,7 +103,7 @@ runs:
       uses: github/codeql-action/upload-sarif@v3
       with:
         sarif_file: ${{ steps.scan.outputs.sarif-file }}
-        category: evershield
+        category: ${{ inputs.command == 'audit' && 'evershield-audit' || 'evershield' }}
 
     - shell: bash
       env:
