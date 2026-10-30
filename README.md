@@ -47,9 +47,13 @@ evershield checks three places, before deploy:
 
 | Layer | Command | What it catches | Example |
 |---|---|---|---|
-| **Response** | `audit` | higher-tier data in lower-tier API responses | "Pro only" metrics in every free user's JSON |
-| **Surface** | `surface` | data hidden by CSS instead of withheld by the server | a blurred paywall with the real numbers in the DOM |
-| **Artifact** | `scan` | keys, internal URLs, source maps in the build | a billing key in the bundle, a published `.map` |
+| **3 · Surface** | `surface` | data hidden by CSS instead of withheld by the server | a blurred paywall with the real numbers in the DOM |
+| **2 · Response** | `audit` | higher-tier data in lower-tier API responses | "Pro only" metrics in every free user's JSON |
+| **1 · Artifact** | `scan` | keys, internal URLs, source maps in the build | a billing key in the bundle, a published `.map` |
+
+The order matches the demo: from what the user sees, down to what the bundle
+ships. Rule IDs carry the layer name (`surface/…`, `response/…`,
+`artifact/…`); commands carry the verb.
 
 Layers 2 and 3 call your own app as each identity you configure (anonymous,
 free, pro, ...) and compare what each one gets. Layer 1 overlaps with secret
