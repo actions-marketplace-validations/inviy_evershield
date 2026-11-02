@@ -15,6 +15,15 @@ change rule defaults and output shapes; each such change is listed.
   configuration. Library sample values (`test`, `example`, `sample`), code
   (`${e}`) and prose (`<binary data>`) stay silent. Info never blocks.
 
+### Changed
+
+- A named high-entropy value (`apiKey: "…"`) with an auth header string
+  (`"Authorization"`, `"Bearer "`, `"x-api-key"`, `"x-auth-token"`) within 300
+  characters is medium confidence instead of low, so it now fails the
+  default gate: the value is being sent as a credential. Minifiers keep
+  string literals, so the signal survives in bundles. No change on the
+  false-positive corpus or on 15 popular npm tarballs.
+
 ## [0.6.0] - 2026-11-02
 
 ### Added

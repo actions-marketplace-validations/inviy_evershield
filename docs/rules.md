@@ -22,6 +22,7 @@ Credentials in shipped files.
 | Google API key in a file that also calls Gemini (`generativelanguage.googleapis.com`, `@google/genai`) | high | medium | A Maps or Firebase key works for Gemini once the project enables it, and is billed for it |
 | JWT with no `role` claim | low | medium | Often a fixture, sometimes a live token |
 | Name-based (`apiKey: "…"`) with entropy ≥ 3.5 bits/char and a credential-shaped value | high | low | Depends on the name and the value's shape, not a known format |
+| The same, with an auth header string (`"Authorization"`, `"Bearer "`, `"x-api-key"`, `"x-auth-token"`) within 300 characters | high | medium | The value is being sent as a credential; string literals survive minification, identifiers do not |
 | Credential name holding a placeholder (`your_…`, `changeme`, `xxxx`, `<YOUR_API_KEY>`, `${API_KEY}`, `__TOKEN__`) | info | high | Not a leak, but the build shipped without its real configuration |
 
 A private key block needs a base64 body after its `-----BEGIN … PRIVATE
@@ -32,7 +33,8 @@ Not reported: AWS documentation example key IDs (ending in `EXAMPLE`, as in
 `AKIAIOSFODNN7EXAMPLE`, which the AWS SDK ships in its docs), Stripe
 publishable keys, Supabase `anon`/`authenticated` JWTs,
 values under a framework-public prefix (`NEXT_PUBLIC_`, `VITE_`, …),
-placeholder values (`your_…`, `xxxx`, `changeme`), and values shaped like
+library sample values (`test…`, `example…`, `sample…`; placeholders such
+as `your_…` are info findings, see above), and values shaped like
 CSS custom properties or paths (`--brand-color-hover`, `spacing.large.default`).
 
 Reports never print the matched value in full; evidence shows the first and
