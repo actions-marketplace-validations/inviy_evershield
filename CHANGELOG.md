@@ -7,11 +7,89 @@ change rule defaults and output shapes; each such change is listed.
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-11-02
+
+### Changed
+
+- README reorganised around why evershield exists, the problem it catches,
+  who it is for and its limits; a Korean README (`README.ko.md`) is added.
+- `evershield demo` without Playwright explains what layer 3 would have
+  shown and gives the two commands that run it
+  (`npx playwright install chromium`, then
+  `npx -p evershield -p playwright evershield demo`).
+
+## [0.7.0] - 2026-11-02
+
 ### Added
 
+- A credential name holding a placeholder (`apiKey: "your_api_key_here"`,
+  `"<YOUR_API_KEY>"`, `"${API_KEY}"`, `changeme`, `xxxx`) is reported at
+  info severity instead of being dropped: the build shipped without its real
+  configuration. Library sample values (`test`, `example`, `sample`), code
+  (`${e}`) and prose (`<binary data>`) stay silent. Info never blocks.
+
+### Changed
+
+- A named high-entropy value (`apiKey: "…"`) with an auth header string
+  (`"Authorization"`, `"Bearer "`, `"x-api-key"`, `"x-auth-token"`) within 300
+  characters is medium confidence instead of low, so it now fails the
+  default gate: the value is being sent as a credential. Minifiers keep
+  string literals, so the signal survives in bundles. No change on the
+  false-positive corpus or on 15 popular npm tarballs.
+
+### Fixed
+
+- The GitHub Action's `description` is back under GitHub Marketplace's
+  125-character limit (115); the 0.6.0 wording had grown it to 142, which
+  blocked listing the release on Marketplace.
+
+## [0.6.0] - 2026-11-02
+
+### Added
+
+- LLM provider keys: OpenRouter (`sk-or-v1-`), Groq (`gsk_`), xAI (`xai-`),
+  Perplexity (`pplx-`), Hugging Face (`hf_`) and Replicate (`r8_`) are
+  critical, alongside the existing Anthropic and OpenAI formats. OpenRouter
+  keys are no longer reported as OpenAI keys.
+- A Google API key in a file that also calls Gemini
+  (`generativelanguage.googleapis.com`, `@google/genai`) is high instead of
+  medium: a browser key works for Gemini once the project enables it, and
+  is billed for it.
+- `evershield mcp` treats results as untrusted data: every string is
+  stripped of invisible and bidirectional control characters and capped at
+  500 characters, and each result ends with a note that its contents came
+  from the scanned files and are not instructions. A scanned repository or
+  page can no longer hide text addressed to the agent in a file name or an
+  identifier.
+- `evershield scan <name>-<version>.tgz`: scans an npm package tarball as
+  `npm pack` writes it, every text file included, so a release can be gated
+  on what installers actually receive.
+- Rule `artifact/sensitive-file-shipped`: an `.env`, `.npmrc`, signing
+  keystore, SSH key, `.git/config` or coding-agent config in the shipped set
+  is reported by path, even when binary or without a text extension.
+- `artifact/source-map-published` says when a map embeds the original
+  source (`sourcesContent`). In an npm tarball, maps of an open-source
+  package (by its SPDX `license`) are info; a map with `sourcesContent` in a
+  package without an open-source license stays high. A package's maps are
+  grouped into one finding per severity.
 - GitHub Action: `command` input. `command: audit` runs layer 2 and uploads
   its SARIF under the `evershield-audit` category. The default stays `scan`,
   so existing workflows are unchanged; `path` is now required only for `scan`.
+
+### Fixed
+
+- AWS documentation example key IDs (`AKIAIOSFODNN7EXAMPLE` and others
+  ending in `EXAMPLE`) are no longer reported as live AWS keys.
+- `artifact/sensitive-env-name` no longer reports a value that spells the
+  name in camelCase (`RESET_PASSWORD: "resetPassword"`) or an API path, and
+  reports literals in example, fixture, test and docs paths at low
+  confidence. Found by scanning 15 popular npm tarballs: none now blocks.
+- Google API keys ending in `-` were missed, and Anthropic, OpenAI and Slack
+  keys ending in `-` or `_` were captured without their last character: the
+  patterns ended in `\b`. They now end in a lookahead of their own character
+  class. Found by new boundary-mutation tests (`src/rules/boundary.test.ts`),
+  which generate edge values for every provider format and check them in
+  twelve file contexts.
 
 ### Changed
 
@@ -222,7 +300,10 @@ First release: layer 1, the built-artifact scan.
   scanning, then fails on blocking findings.
 - Matched values are redacted in every output format.
 
-[Unreleased]: https://github.com/inviy/evershield/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/inviy/evershield/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/inviy/evershield/compare/v0.7.0...v0.7.1
+[0.7.0]: https://github.com/inviy/evershield/compare/v0.6.0...v0.7.0
+[0.6.0]: https://github.com/inviy/evershield/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/inviy/evershield/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/inviy/evershield/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/inviy/evershield/compare/v0.4.0...v0.4.1

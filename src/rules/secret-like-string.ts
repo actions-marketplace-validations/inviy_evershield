@@ -3,11 +3,15 @@
  *
  * Credentials shipped to the browser. Two tiers:
  *
- * - Provider formats (AWS, GitHub, Stripe, Slack, OpenAI, Anthropic, private
- *   key blocks, Supabase service-role JWTs) are structurally unambiguous, so
- *   confidence is high. Severity is critical: they grant server-side access.
+ * - Provider formats (AWS, GitHub, Stripe, Slack, OpenAI, Anthropic and other
+ *   LLM providers, private key blocks, Supabase service-role JWTs) are
+ *   structurally unambiguous, so confidence is high. Severity is critical:
+ *   they grant server-side access or a bill anyone can run up. A Google
+ *   browser key is medium, raised to high when the same file calls Gemini.
  * - Name-based matches (`apiKey: "…"`) depend on the value's entropy and on
- *   the name not being a framework-public variable, so confidence is low.
+ *   the name not being a framework-public variable, so confidence is low;
+ *   medium when an auth header string (`"Authorization"`, `"Bearer "`,
+ *   `"x-api-key"`) sits within 300 characters, because the value is sent.
  *   Severity stays high because when they are real they are just as bad.
  *
  * Public-by-design keys (Stripe `pk_`, Supabase anon JWTs, Google browser
@@ -15,7 +19,7 @@
  * a note, because flagging them trains people to ignore the report.
  */
 import type { Confidence, Finding, Severity } from "../index.ts";
-import { decodeJwtPayload, lineColumn, looksLikePlaceholder, redact, shannonEntropy } from "../scan/text.ts";
+import { decodeJwtPayload, lineColumn, looksLikePlaceholder, looksUnfilled, redact, shannonEntropy } from "../scan/text.ts";
 import { helpUri, MAX_FINDINGS_PER_FILE, type Rule, type RuleContext } from "./types.ts";
 
 interface ProviderPattern {
@@ -24,26 +28,47 @@ interface ProviderPattern {
   severity: Severity;
   confidence: Confidence;
   remediation: string;
+  /** Context in the same file that makes the key worse than its format alone says. */
+  escalate?: { when: RegExp; severity: Severity; note: string; remediation: string };
 }
 
 const ROTATE = "Rotate the credential now; treat it as compromised. Move its use behind a server endpoint.";
 
+// Patterns end in a negative lookahead of their own character class, not \b: a key may end in
+// `-` or `_`, and `\b` then either truncates the match or, after a fixed count, misses it
+// (boundary-mutation tests in boundary.test.ts).
 const PROVIDERS: ProviderPattern[] = [
-  { name: "AWS access key ID", pattern: /\bAKIA[0-9A-Z]{16}\b/g, severity: "critical", confidence: "high", remediation: ROTATE },
+  // AWS documents its examples with IDs ending in EXAMPLE (AKIAIOSFODNN7EXAMPLE); the SDK ships them in docs.
+  { name: "AWS access key ID", pattern: /\bAKIA(?![0-9A-Z]{9}EXAMPLE\b)[0-9A-Z]{16}\b/g, severity: "critical", confidence: "high", remediation: ROTATE },
   { name: "GitHub token", pattern: /\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,}\b|\bgithub_pat_[A-Za-z0-9_]{80,}\b/g, severity: "critical", confidence: "high", remediation: ROTATE },
   { name: "Stripe secret key", pattern: /\b(?:sk|rk)_live_[0-9A-Za-z]{24,}\b/g, severity: "critical", confidence: "high", remediation: ROTATE },
   { name: "Stripe test secret key", pattern: /\b(?:sk|rk)_test_[0-9A-Za-z]{24,}\b/g, severity: "medium", confidence: "high", remediation: "Test keys should not ship either; remove and keep them server-side." },
-  { name: "Slack token", pattern: /\bxox[baprs]-[0-9A-Za-z-]{10,}\b/g, severity: "critical", confidence: "high", remediation: ROTATE },
-  { name: "Anthropic API key", pattern: /\bsk-ant-[A-Za-z0-9_-]{32,}\b/g, severity: "critical", confidence: "high", remediation: ROTATE },
-  { name: "OpenAI API key", pattern: /\bsk-(?!ant-)(?:proj-|svcacct-|admin-)?[A-Za-z0-9_-]{32,}\b/g, severity: "critical", confidence: "high", remediation: ROTATE },
+  { name: "Slack token", pattern: /\bxox[baprs]-[0-9A-Za-z-]{10,}(?![0-9A-Za-z-])/g, severity: "critical", confidence: "high", remediation: ROTATE },
+  { name: "Anthropic API key", pattern: /\bsk-ant-[A-Za-z0-9_-]{32,}(?![A-Za-z0-9_-])/g, severity: "critical", confidence: "high", remediation: ROTATE },
+  // sk-or- is OpenRouter's prefix, reported under its own name below.
+  { name: "OpenAI API key", pattern: /\bsk-(?!ant-|or-)(?:proj-|svcacct-|admin-)?[A-Za-z0-9_-]{32,}(?![A-Za-z0-9_-])/g, severity: "critical", confidence: "high", remediation: ROTATE },
+  // LLM providers: a shipped key is a bill anyone can run up (SecretLoc, arXiv 2510.18601; LLMKeyLens, 2606.12212).
+  { name: "OpenRouter API key", pattern: /\bsk-or-v1-[0-9a-f]{64}(?![0-9a-f])/g, severity: "critical", confidence: "high", remediation: ROTATE },
+  { name: "Groq API key", pattern: /\bgsk_[A-Za-z0-9]{52}(?![A-Za-z0-9])/g, severity: "critical", confidence: "high", remediation: ROTATE },
+  { name: "xAI API key", pattern: /\bxai-[A-Za-z0-9]{80}(?![A-Za-z0-9])/g, severity: "critical", confidence: "high", remediation: ROTATE },
+  { name: "Perplexity API key", pattern: /\bpplx-[A-Za-z0-9]{48}(?![A-Za-z0-9])/g, severity: "critical", confidence: "high", remediation: ROTATE },
+  { name: "Hugging Face token", pattern: /\bhf_[A-Za-z]{34}(?![A-Za-z0-9_])/g, severity: "critical", confidence: "high", remediation: ROTATE },
+  { name: "Replicate API token", pattern: /\br8_[A-Za-z0-9]{37}(?![A-Za-z0-9])/g, severity: "critical", confidence: "high", remediation: ROTATE },
   // The header alone is how PEM-parsing code (jose, auth0-spa-js) checks its input; a real key has a base64 body.
   { name: "Private key block", pattern: /-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY(?: BLOCK)?-----(?:\\[rn]|\s)*[A-Za-z0-9+/=]{64,}/g, severity: "critical", confidence: "high", remediation: "Remove the key from the build and rotate it." },
   {
     name: "Google API key",
-    pattern: /\bAIza[0-9A-Za-z_-]{35}\b/g,
+    pattern: /\bAIza[0-9A-Za-z_-]{35}(?![0-9A-Za-z_-])/g,
     severity: "medium",
     confidence: "medium",
     remediation: "Browser keys are expected to ship; confirm this one is restricted to your origins and to the APIs it needs.",
+    // A Maps or Firebase key in a project with Gemini enabled can be billed for Gemini (GeekNews 27026, 28635).
+    escalate: {
+      when: /generativelanguage\.googleapis\.com|aiplatform\.googleapis\.com|GoogleGenerativeAI|@google\/genai/,
+      severity: "high",
+      note: "next to Gemini API calls: anyone who copies it can bill Gemini to your project",
+      remediation: "Call Gemini from your server. Restrict this key to the APIs the browser needs (API restrictions in the Cloud console), which excludes the Generative Language API.",
+    },
   },
 ];
 
@@ -52,7 +77,19 @@ const JWT = /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g;
 const NAMED_VALUE =
   /\b((?:[A-Za-z_][A-Za-z0-9_]*?)?(?:secret|token|api[_-]?key|apikey|password|passwd|private[_-]?key|auth[_-]?key)[A-Za-z0-9_]*)["']?\s*[:=]\s*["']([A-Za-z0-9_\-./+=]{16,})["']/gi;
 
+/** The same credential names with any quoted value, to spot stand-ins (`<YOUR_KEY>`, `changeme`) the value pattern above cannot. */
+const NAMED_SLOT =
+  /\b((?:[A-Za-z_][A-Za-z0-9_]*?)?(?:secret|token|api[_-]?key|apikey|password|passwd|private[_-]?key|auth[_-]?key)[A-Za-z0-9_]*)["']?\s*[:=]\s*["']([^"'\n]{4,80})["']/gi;
+
 const MIN_NAMED_ENTROPY = 3.5;
+
+/**
+ * Strings that send a credential: an auth header name or scheme. Minifiers rename identifiers but keep
+ * string literals, so these survive in any bundle (StringGroup / Secretron, arXiv 2608.04523). A named
+ * high-entropy value with one of them close by is being used as a credential.
+ */
+const CREDENTIAL_USE = /["'`](?:Authorization|Bearer |Basic |x-api-key|x-auth-token|api-key|x-goog-api-key|apikey)["'`:]/i;
+const CONTEXT_WINDOW = 300;
 
 function isPublicName(name: string, context: RuleContext): boolean {
   const upper = name.toUpperCase();
@@ -90,6 +127,7 @@ export const secretLikeString: Rule = {
     };
 
     for (const provider of PROVIDERS) {
+      const escalated = provider.escalate !== undefined && provider.escalate.when.test(file.text) ? provider.escalate : null;
       for (const match of file.text.matchAll(provider.pattern)) {
         const value = match[0];
         const { line, column } = lineColumn(file.text, match.index);
@@ -97,11 +135,11 @@ export const secretLikeString: Rule = {
           {
             ruleId: secretLikeString.id,
             layer: "artifact",
-            severity: provider.severity,
+            severity: escalated?.severity ?? provider.severity,
             confidence: provider.confidence,
-            message: `${provider.name} shipped in ${file.relativePath}`,
+            message: `${provider.name} shipped in ${file.relativePath}${escalated === null ? "" : ` ${escalated.note}`}`,
             evidence: [{ kind: "file", path: file.relativePath, line, column, excerpt: redact(value) }],
-            remediation: provider.remediation,
+            remediation: escalated?.remediation ?? provider.remediation,
             helpUri: helpUri(secretLikeString.id),
           },
           `${provider.name}:${value}`,
@@ -158,18 +196,46 @@ export const secretLikeString: Rule = {
       if (isPublicName(name, context) || looksLikePlaceholder(value)) continue;
       if (!looksLikeCredentialValue(value)) continue;
       const { line, column } = lineColumn(file.text, match.index);
+      const around = file.text.slice(Math.max(0, match.index - CONTEXT_WINDOW), match.index + match[0].length + CONTEXT_WINDOW);
+      const used = CREDENTIAL_USE.test(around);
       push(
         {
           ruleId: secretLikeString.id,
           layer: "artifact",
           severity: "high",
-          confidence: "low",
-          message: `"${name}" is assigned a high-entropy value in ${file.relativePath}`,
+          confidence: used ? "medium" : "low",
+          message: used
+            ? `"${name}" is assigned a high-entropy value in ${file.relativePath}, next to an auth header that sends it`
+            : `"${name}" is assigned a high-entropy value in ${file.relativePath}`,
           evidence: [{ kind: "file", path: file.relativePath, line, column, excerpt: `${name} = ${redact(value)}` }],
           remediation: "If this is a real credential, rotate it and move the call server-side. If it is public by design, rename it with your framework's public prefix.",
           helpUri: helpUri(secretLikeString.id),
         },
         `named:${name}:${value}`,
+        value,
+      );
+    }
+
+    // A stand-in shipped in place of a credential is not a leak, but the build went out without its real
+    // configuration (or reads it at runtime from somewhere worth checking). Separating these from silent
+    // drops follows "Separating Secrets from Placeholders" (arXiv 2605.31520).
+    for (const match of file.text.matchAll(NAMED_SLOT)) {
+      const name = match[1];
+      const value = match[2];
+      if (name === undefined || value === undefined || isPublicName(name, context) || !looksUnfilled(value)) continue;
+      const { line, column } = lineColumn(file.text, match.index);
+      push(
+        {
+          ruleId: secretLikeString.id,
+          layer: "artifact",
+          severity: "info",
+          confidence: "high",
+          message: `"${name}" holds a placeholder in ${file.relativePath}: the build shipped without its real value`,
+          evidence: [{ kind: "file", path: file.relativePath, line, column, excerpt: `${name} = ${value.slice(0, 24)}` }],
+          remediation: "Check the build's environment: the real value was not injected. Do not fix it by inlining the real secret; keep it server-side.",
+          helpUri: helpUri(secretLikeString.id),
+        },
+        `slot:${name}:${value}`,
         value,
       );
     }

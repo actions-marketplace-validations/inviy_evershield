@@ -31,6 +31,10 @@ test("an Anthropic key is reported once, not also as an OpenAI key", () => {
   assert.match(findings[0]!.message, /Anthropic/);
 });
 
+test("AWS documentation example key IDs (ending in EXAMPLE) are not findings", () => {
+  for (const example of ["AKIAIOSFODNN7EXAMPLE", "AKIA111111111EXAMPLE"]) assert.equal(check(`"${example}"`).length, 0, example);
+});
+
 test("Supabase service_role JWT is critical; anon JWT is not a finding", () => {
   const service = check(`const key = "${fake.jwt({ role: "service_role", iss: "supabase" })}";`);
   assert.equal(service.length, 1);
@@ -56,9 +60,9 @@ test("named high-entropy values are high severity but low confidence", () => {
   assert.match(findings[0]!.evidence[0]!.excerpt ?? "", /apiKey = Zq8v…/);
 });
 
-test("public-by-design and placeholder values are not findings", () => {
+test("public-by-design and repeated-character values are not findings", () => {
+  // Placeholders such as "your_api_key_here" are info findings now; see the placeholder test below.
   const clean = [
-    `apiKey: "your_api_key_here_ok"`,
     `password: "aaaaaaaaaaaaaaaaaaaa"`,
     `NEXT_PUBLIC_API_KEY: "${fake.highEntropy()}"`,
     `VITE_TOKEN = "${fake.highEntropy()}"`,
@@ -78,6 +82,61 @@ test("Google browser keys are medium severity with a restriction note", () => {
   assert.equal(findings.length, 1);
   assert.equal(findings[0]!.severity, "medium");
   assert.match(findings[0]!.remediation ?? "", /restricted/);
+});
+
+test("a Google key next to Gemini API calls is high: it can be billed for Gemini", () => {
+  const findings = check(`const k="${fake.googleKey()}";fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key="+k)`);
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0]!.severity, "high");
+  assert.match(findings[0]!.message, /Gemini/);
+  assert.match(findings[0]!.remediation ?? "", /server/);
+});
+
+test("LLM provider keys are critical and named for their provider", () => {
+  const cases: Array<[string, string]> = [
+    ["OpenRouter API key", ["sk", "or", "v1", "a1b2c3d4".repeat(8)].join("-")],
+    ["Groq API key", ["gsk", "Q".repeat(26) + "7".repeat(26)].join("_")],
+    ["xAI API key", ["xai", "X9".repeat(40)].join("-")],
+    ["Perplexity API key", ["pplx", "P4".repeat(24)].join("-")],
+    ["Hugging Face token", ["hf", "AbCd".repeat(8) + "Ef"].join("_")],
+    ["Replicate API token", ["r8", "R5".repeat(18) + "x"].join("_")],
+  ];
+  for (const [label, secret] of cases) {
+    const findings = check(`const k = "${secret}";`);
+    assert.equal(findings.length, 1, `${label}: ${findings.map((f) => f.message).join(", ")}`);
+    assert.equal(findings[0]!.severity, "critical", label);
+    assert.match(findings[0]!.message, new RegExp(`^${label}`), label);
+    assert.ok(!JSON.stringify(findings[0]).includes(secret), `${label} must be redacted`);
+  }
+});
+
+test("a named high-entropy value next to an auth header string is medium confidence", () => {
+  const value = fake.highEntropy();
+  const sent = check(`var c={apiKey:"${value}"};fetch(u,{headers:{"x-api-key":c.apiKey}})`);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0]!.confidence, "medium");
+  assert.match(sent[0]!.message, /auth header/);
+  const bearer = check(`const t={token:"${value}"};h.set("Authorization","Bearer "+t.token)`);
+  assert.equal(bearer[0]!.confidence, "medium");
+  // The same value with no header in reach stays low: a config blob, a fixture, a hash.
+  const far = check(`var c={apiKey:"${value}"};${"x".repeat(400)};h.set("Authorization",z)`);
+  assert.equal(far[0]!.confidence, "low");
+  // An identifier named authorization is not the header string.
+  assert.equal(check(`var authorization=1,c={apiKey:"${value}"}`)[0]!.confidence, "low");
+});
+
+test("a placeholder in a credential slot is an info finding: the build shipped without its real value", () => {
+  for (const value of ["your_api_key_here", "<YOUR_API_KEY>", "${STRIPE_SECRET_KEY}", "changeme", "xxxxxxxxxxxx", "__API_TOKEN__"]) {
+    const findings = check(`const config = { apiKey: "${value}" };`);
+    assert.equal(findings.length, 1, value);
+    assert.equal(findings[0]!.severity, "info", value);
+    assert.match(findings[0]!.message, /placeholder/, value);
+  }
+  // Code and prose, not stand-ins; library samples stay silent as before.
+  for (const value of ["${e}", "<binary data>", "test-token-value", "example_secret_1", "sample"]) {
+    assert.equal(check(`const o = { token: "${value}" };`).filter((f) => f.message.includes("placeholder")).length, 0, value);
+  }
+  assert.equal(check(`const c = { NEXT_PUBLIC_API_KEY: "your_key_here" };`).length, 0, "public names are never findings");
 });
 
 test("the same secret in one file is reported once", () => {
