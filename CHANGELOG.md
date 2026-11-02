@@ -32,6 +32,12 @@ change rule defaults and output shapes; each such change is listed.
   name in camelCase (`RESET_PASSWORD: "resetPassword"`) or an API path, and
   reports literals in example, fixture, test and docs paths at low
   confidence. Found by scanning 15 popular npm tarballs: none now blocks.
+- Google API keys ending in `-` were missed, and Anthropic, OpenAI and Slack
+  keys ending in `-` or `_` were captured without their last character: the
+  patterns ended in `\b`. They now end in a lookahead of their own character
+  class. Found by new boundary-mutation tests (`src/rules/boundary.test.ts`),
+  which generate edge values for every provider format and check them in
+  twelve file contexts.
 
 ### Changed
 
